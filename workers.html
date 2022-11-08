@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <title>Workers list</title>
+    <meta name="robots" content="noindex">
+    <script src="https://cdn.jsdelivr.net/npm/vue@2.7.13/dist/vue.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-core/5.8.24/browser.min.js"></script>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.2.2/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-Zenh87qX5JnK2Jl0vWa8Ck2rdkQ2Bzep5IDxbcnCeuOxjzrPF/et3URy9Bv1WTRi" crossorigin="anonymous">
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.2.2/dist/js/bootstrap.bundle.min.js" integrity="sha384-OERcA2EqjJCMA+/3y+gxIOqMEjwtxJY7qPCqsdltbNJuaOe923+mo//f6V8Qbsw3" crossorigin="anonymous"></script>
+    <script src="https://unpkg.com/xlsx/dist/xlsx.full.min.js"></script>
+  </head>
+  <body>
+    <div id="app" class="container">
+      <div class="row">
+        <div class="col-8 mt-4">
+          <div>
+            <table class="table caption-top table-striped border" ref="workersTable">
+              <caption class="text-primary h2">Workers</caption>
+              <thead>
+                <tr>
+                  <th>ID</th>
+                  <th>First name</th>
+                  <th>Last name</th>
+                  <th>Department</th>
+                  <th>Salary</th>
+                  <th>Currency</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="(worker, index) in filteredList">
+                  <td>{{index+1}}.</td>
+                  <td>{{worker.firstName}}</td>
+                  <td>{{worker.lastName}}</td>
+                  <td>{{worker.department}}</td>
+                  <td>{{worker.salary.amount}}</td>
+                  <td>{{worker.salary.currency}}</td>
+                </tr>
+              </tbody>
+              <tfoot>
+                <tr>
+                  <td colspan="3" :rowspan="Object.keys(salarySum).length"></td>
+                  <td :rowspan="Object.keys(salarySum).length">Summary</td>
+                  <td>{{Object.values(salarySum)[0]}}</td>
+                  <td>{{Object.keys(salarySum)[0]}}</td>
+                </tr>
+                <tr v-for="(value, key) in salarySum" v-if="Object.keys(salarySum)[0] !== key">
+                  <td>{{value}}</td>
+                  <td>{{key}}</td>
+                </tr>
+              </tfoot>
+            </table>
+            <button type="button" class="btn btn-light float-end" @click="toExcel($refs.workersTable)">Export</button>
+
+            <table class="table caption-top table-striped border" ref="salariesTable">
+              <caption class="text-primary h2">Summary per department</caption>
+              <thead>
+                <tr>
+                  <th>Department</th>
+                  <th>Sum of salaries</th>
+                  <th>Currency</th>
+                </tr>
+              </thead>
+              <tbody>
+                <template v-for="(salary, key) in departmentsSalarySum">
+                  <tr>
+                    <td :rowspan="Object.keys(salary).length">{{key}}</td>
+                    <td>{{Object.values(salary)[0]}}</td>
+                    <td>{{Object.keys(salary)[0]}}</td>
+                  </tr>
+                  <tr v-for="(value, key) in salary" v-if="Object.keys(salary)[0] !== key">
+                    <td>{{value}}</td>
+                    <td>{{key}}</td>
+                  </tr>
+                </template>
+              </tbody>
+            </table>
+            <button type="button" class="btn btn-light float-end" @click="toExcel($refs.salariesTable)">Export</button>
+          </div>
+        </div>
+        <div class="col-4">
+          <div id="accordion" class="sticky-top accordion accordion-flush" style="height: 100vh; min-height: 100vh;">
+            <div class="accordion-item border">
+              <h2 class="accordion-header">
+                <button class="accordion-button fs-4" type="button" data-bs-toggle="collapse" data-bs-target="#search" aria-expanded="true" aria-controls="search">
+                  Search
+                </button>
+              </h2>
+              <div id="search" class="accordion-collapse collapse show" aria-labelledby="search" data-bs-parent="#accordion">
+                <div class="accordion-body">
+                  <fieldset>
+                    <legend class="fs-5">Person</legend>
+                    <div class="form-floating mb-2">
+                      <input id="searchFirstName" class="form-control" placeholder="First name" v-model="search.firstName"/>
+                      <label for="searchFirstName">First name</label>
+                    </div>
+                    <div class="form-floating mb-2">
+                      <input id="searchLastName" class="form-control" placeholder="Last name" v-model="search.lastName" />
+                      <label for="searchLastName">Last name</label>
+                    </div>
+                  </fieldset>
+                  <fieldset>
+                    <legend class="fs-5">Department</legend>
+                    <div class="btn-group w-100 mb-2" role="group" aria-label="Department">
+                      <template v-for="(department, i) in departments">
+                        <input type="checkbox" class="btn-check" :id="'department_s_'+i" autocomplete="off" :value="department" v-model="search.department">
+                        <label class="btn btn-outline-primary p-2" :for="'department_s_'+i">{{department}}</label>
+                      </template>
+                    </div>
+                  </fieldset>
+                  <fieldset>
+                    <legend class="fs-5">Salary</legend>
+                    <div class="input-group">
+                      <div class="form-floating">
+                        <input id="searchSalaryMin" class="form-control" placeholder="Amount min" type="number" step="any" min="0" v-model.number="search.salary.amount.min" />
+                        <label for="searchSalaryMin">Min</label>
+                      </div>
+                      <div class="form-floating">
+                        <input id="searchSalaryMax" class="form-control" placeholder="Amount max" type="number" step="any" min="0" v-model.number="search.salary.amount.max" />
+                        <label for="searchSalaryMax">Max</label>
+                      </div>
+                      <select class="form-select" aria-label="Currency" v-model="search.salary.currency" style="max-width: 100px">
+                        <option>Any</option>
+                        <option v-for="currency in currencies">{{currency}}</option>
+                      </select>
+                    </div>
+                  </fieldset>
+                </div>
+              </div>
+            </div>
+            <div class="accordion-item border border-top-0 rounded-bottom">
+              <h2 class="accordion-header">
+                <button class="accordion-button collapsed fs-4" type="button" data-bs-toggle="collapse" data-bs-target="#worker" aria-expanded="false" aria-controls="worker">
+                  New worker
+                </button>
+              </h2>
+              <div id="worker" class="accordion-collapse collapse" aria-labelledby="worker" data-bs-parent="#accordion">
+                <form @submit.prevent="addWorker" class="accordion-body">
+                  <fieldset>
+                    <legend class="fs-5">Person</legend>
+                    <div class="form-floating mb-2">
+                      <input id="firstName" class="form-control" placeholder="First name" autocomplete="off" required v-model="worker.firstName"/>
+                      <label for="firstName">First name</label>
+                    </div>
+                    <div class="form-floating mb-2">
+                      <input id="lastName" class="form-control" placeholder="Last name" autocomplete="off" required v-model="worker.lastName" />
+                      <label for="lastName">Last name</label>
+                    </div>
+                  </fieldset>
+                  
+                  <fieldset>
+                    <legend class="fs-5">Department</legend>
+                    <div class="btn-group w-100 mb-2" role="group" aria-label="Department">
+                      <template v-for="(department, i) in departments">
+                        <input type="radio" class="btn-check" :id="'department_'+i" autocomplete="off" :value="department" v-model="worker.department">
+                        <label class="btn btn-outline-primary p-2" :for="'department_'+i">{{department}}</label>
+                      </template>
+                    </div>
+                  </fieldset>
+
+                  <fieldset class="mb-2">
+                    <legend class="fs-5">Salary</legend>
+                    <div class="input-group mb-2">
+                      <div class="form-floating">
+                        <small>{{errors.salary}}</small>
+                        <input type="number" step="any" min="0" id="salary" class="form-control" placeholder="Amount" autocomplete="off" required v-model.number="worker.salary.amount"/>
+                        <label for="salary">Amount</label>
+                      </div>
+                      <select class="form-select" v-model="worker.salary.currency" style="max-width: 100px">
+                        <option v-for="currency in currencies">{{currency}}</option>
+                      </select>
+                    </div>
+                  </fieldset>
+
+                  <button type="submit" class="btn btn-primary btn-lg w-100">Add new worker</button>
+                </form>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script>
+
+    new Vue({
+      el: "#app",
+      props: {
+        defaultWorkerForm: {
+          type: Object,
+          default() { 
+            return {
+              "firstName": '',
+              "lastName": '',
+              "department": "IT",
+              "salary": { "amount": null, "currency": "USD" }
+            }
+          }
+        },
+      },
+      data() {
+        return {
+          worker: this.deepCopy(this.defaultWorkerForm),
+          errors: {},
+          search: {
+            "firstName": '',
+            "lastName": '',
+            "department": [],
+            "salary": { "amount": { "min": null, "max": null}, "currency": 'Any'}
+          },
+          currencies: [
+            "USD",
+            "EUR",
+            "PLN"
+          ],
+          departments: [
+            "IT",
+            "Sales",
+            "Administration"
+          ],
+          workerList: [
+            { "firstName": "John", "lastName": "Smith", "department": "IT", "salary": { "amount": 3050, "currency": "USD" } },
+            { "firstName": "Jane", "lastName": "Murphy", "department": "IT", "salary": { "amount": 3000.50, "currency": "USD" } },
+            { "firstName": "Bob", "lastName": "Colman", "department": "Sales", "salary": { "amount": 6000, "currency": "USD" } },
+            { "firstName": "Barbara", "lastName": "O'Connor", "department": "Sales", "salary": { "amount": 4000, "currency": "USD" } },
+            { "firstName": "Adam", "lastName": "Doe", "department": "Administration", "salary": { "amount": 2000, "currency": "EUR" } }
+          ]
+        }
+      },
+      mounted: function() {
+        if('workers' in localStorage) {
+          this.workerList = JSON.parse(localStorage['workers']);
+        }
+      },
+      watch: {
+        workerList(val, oldVal) {
+          localStorage['workers'] = JSON.stringify(val);
+        }
+      },
+      computed: {
+        filteredList() {
+          return this.workerList.filter(worker => {
+            let passed = true;
+
+            passed = worker.firstName.toLowerCase().includes(this.search.firstName.toLowerCase()) && 
+              worker.lastName.toLowerCase().includes(this.search.lastName.toLowerCase()) &&
+              ((this.search.department.length > 0) ? this.search.department.includes(worker.department) : true) &&
+              worker.salary.amount >= this.search.salary.amount.min && 
+              ((this.search.salary.amount.max > 0) ? worker.salary.amount <= this.search.salary.amount.max : true) &&
+              ((this.search.salary.currency !== 'Any') ? this.search.salary.currency.includes(worker.salary.currency) : true)
+
+            return passed;
+          });
+        },
+        salarySum() {
+          return this.getSalaries(this.workerList);
+        },
+        departmentsSalarySum() {
+          let departments = {};
+
+          this.departments.forEach(name => {
+            const workers = this.workerList.filter(worker => worker.department === name)
+            departments[name] = this.getSalaries(workers);
+          });
+          return departments;
+        }
+      },
+      methods: {
+        getSalaries(workers) {
+          let salaries = {}
+          this.currencies.forEach(value => {
+            salaries[value] = workers
+              .filter(worker => worker.salary.currency === value )
+              .reduce((acc, i) => acc + i.salary.amount, 0);
+
+            if (salaries[value] === 0) delete salaries[value]
+          });
+          return salaries;
+        },
+        addWorker() {
+          if (this.worker) {
+            this.workerList.push(this.deepCopy(this.worker));
+            this.worker = this.deepCopy(this.defaultWorkerForm);
+          }
+        },
+        deepCopy(val) {
+          return JSON.parse(JSON.stringify(val));
+        },
+        toExcel(tableRef) {
+          var sheet = XLSX.utils.table_to_book(tableRef, { sheet: "sheet" });
+          return XLSX.writeFile(sheet, `${tableRef.caption.innerHTML}.xlsx`);
+        }
+      }
+    });
+    </script>
+  </body>
+</html>
